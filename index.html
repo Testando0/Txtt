@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>IMAGIN — AI Image Generator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111111;
+      --border: #1e1e1e;
+      --accent: #e8ff47;
+      --accent2: #ff4747;
+      --text: #f0ede8;
+      --muted: #555;
+      --radius: 4px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 300;
+      overflow-x: hidden;
+    }
+
+    /* Grain overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.35;
+    }
+
+    /* Animated background grid */
+    .grid-bg {
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(232,255,71,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(232,255,71,0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      animation: gridMove 20s linear infinite;
+      pointer-events: none;
+    }
+
+    @keyframes gridMove {
+      0% { background-position: 0 0; }
+      100% { background-position: 60px 60px; }
+    }
+
+    /* Layout */
+    .container {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header */
+    header {
+      padding: 32px 0 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      animation: fadeDown 0.6s ease both;
+    }
+
+    @keyframes fadeDown {
+      from { opacity: 0; transform: translateY(-12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .logo {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 2.4rem;
+      letter-spacing: 0.12em;
+      color: var(--text);
+      line-height: 1;
+    }
+
+    .logo span {
+      color: var(--accent);
+    }
+
+    .badge {
+      font-size: 0.68rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 5px 12px;
+      border-radius: 2px;
+    }
+
+    /* Main */
+    main {
+      padding: 52px 0 40px;
+      animation: fadeUp 0.7s 0.1s ease both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .headline {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(3rem, 8vw, 6.5rem);
+      line-height: 0.92;
+      letter-spacing: 0.04em;
+      margin-bottom: 48px;
+      max-width: 700px;
+    }
+
+    .headline em {
+      font-style: normal;
+      color: var(--accent);
+      -webkit-text-stroke: 0px;
+    }
+
+    .headline .outline {
+      -webkit-text-stroke: 1px rgba(240,237,232,0.3);
+      color: transparent;
+    }
+
+    /* Input area */
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 40px;
+    }
+
+    .prompt-wrapper {
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+      gap: 0;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      border-radius: var(--radius);
+      transition: border-color 0.2s;
+    }
+
+    .prompt-wrapper:focus-within {
+      border-color: var(--accent);
+    }
+
+    textarea {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 1rem;
+      font-weight: 300;
+      line-height: 1.6;
+      padding: 20px 24px;
+      resize: none;
+      min-height: 100px;
+      placeholder-color: var(--muted);
+    }
+
+    textarea::placeholder {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .char-count {
+      position: absolute;
+      bottom: 12px;
+      right: 16px;
+      font-size: 0.72rem;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+      pointer-events: none;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn-generate {
+      background: var(--accent);
+      color: #0a0a0a;
+      border: none;
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.1rem;
+      letter-spacing: 0.14em;
+      padding: 16px 40px;
+      cursor: pointer;
+      border-radius: var(--radius);
+      transition: all 0.18s ease;
+      position: relative;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    .btn-generate::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0.15);
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+
+    .btn-generate:hover::after { opacity: 1; }
+    .btn-generate:active { transform: scale(0.97); }
+    .btn-generate:disabled {
+      background: #2a2a1a;
+      color: #555;
+      cursor: not-allowed;
+    }
+    .btn-generate:disabled::after { display: none; }
+
+    .btn-clear {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.82rem;
+      letter-spacing: 0.08em;
+      padding: 16px 22px;
+      cursor: pointer;
+      border-radius: var(--radius);
+      transition: all 0.18s;
+    }
+
+    .btn-clear:hover { color: var(--text); border-color: #333; }
+
+    .hint {
+      font-size: 0.78rem;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      margin-left: auto;
+      font-style: italic;
+    }
+
+    /* Status bar */
+    .status-bar {
+      height: 2px;
+      background: var(--border);
+      border-radius: 1px;
+      overflow: hidden;
+      margin-bottom: 40px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .status-bar.active { opacity: 1; }
+
+    .status-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.4s ease;
+      animation: none;
+    }
+
+    .status-bar.loading .status-bar-fill {
+      animation: barPulse 1.8s ease-in-out infinite;
+    }
+
+    @keyframes barPulse {
+      0%   { width: 5%; margin-left: 0; }
+      50%  { width: 60%; margin-left: 20%; }
+      100% { width: 5%; margin-left: 95%; }
+    }
+
+    /* Status message */
+    .status-msg {
+      text-align: center;
+      font-size: 0.82rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      min-height: 20px;
+      margin-bottom: 20px;
+      transition: color 0.3s;
+    }
+
+    .status-msg.error { color: var(--accent2); }
+    .status-msg.success { color: var(--accent); }
+
+    /* Result area */
+    .result-area {
+      display: none;
+      animation: fadeUp 0.5s ease both;
+    }
+
+    .result-area.visible { display: block; }
+
+    .result-label {
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .result-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .result-frame {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 300px;
+    }
+
+    .result-frame img {
+      width: 100%;
+      max-height: 700px;
+      object-fit: contain;
+      display: block;
+      transition: opacity 0.4s;
+    }
+
+    .result-actions {
+      margin-top: 16px;
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    .btn-download {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 0.95rem;
+      letter-spacing: 0.14em;
+      padding: 10px 28px;
+      cursor: pointer;
+      border-radius: var(--radius);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.18s;
+    }
+
+    .btn-download:hover {
+      background: var(--accent);
+      color: #0a0a0a;
+    }
+
+    .btn-new {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.82rem;
+      padding: 10px 20px;
+      cursor: pointer;
+      border-radius: var(--radius);
+      transition: all 0.18s;
+    }
+
+    .btn-new:hover { color: var(--text); border-color: #333; }
+
+    /* History strip */
+    .history-section {
+      margin-top: 56px;
+      padding-top: 32px;
+      border-top: 1px solid var(--border);
+      display: none;
+    }
+
+    .history-section.visible { display: block; }
+
+    .history-label {
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .history-grid {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .history-thumb {
+      width: 80px;
+      height: 80px;
+      object-fit: cover;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: all 0.18s;
+      opacity: 0.6;
+    }
+
+    .history-thumb:hover {
+      opacity: 1;
+      border-color: var(--accent);
+      transform: scale(1.06);
+    }
+
+    /* Footer */
+    footer {
+      padding: 24px 0;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.72rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      animation: fadeUp 0.7s 0.2s ease both;
+    }
+
+    /* Skeleton loader inside frame */
+    .skeleton {
+      width: 100%;
+      min-height: 400px;
+      background: linear-gradient(90deg, #111 25%, #1a1a1a 50%, #111 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+    }
+
+    @keyframes shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* Suggested prompts */
+    .suggestions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 28px;
+    }
+
+    .suggestion-chip {
+      font-size: 0.75rem;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 6px 14px;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.15s;
+      letter-spacing: 0.03em;
+    }
+
+    .suggestion-chip:hover {
+      color: var(--text);
+      border-color: #444;
+      background: #161616;
+    }
+
+    @media (max-width: 600px) {
+      .headline { font-size: 3.2rem; }
+      .actions { flex-wrap: wrap; }
+      .hint { display: none; }
+      .btn-generate { width: 100%; text-align: center; justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="grid-bg"></div>
+
+  <div class="container">
+    <header>
+      <div class="logo">IMAG<span>IN</span></div>
+      <div class="badge">AI · Image Generator</div>
+    </header>
+
+    <main>
+      <h1 class="headline">
+        TURN <em>WORDS</em><br>
+        INTO <span class="outline">VISUALS</span>
+      </h1>
+
+      <div class="suggestions" id="suggestions">
+        <span class="suggestion-chip" onclick="setPrompt(this)">A neon city at midnight, rain reflections</span>
+        <span class="suggestion-chip" onclick="setPrompt(this)">Surreal floating islands above clouds</span>
+        <span class="suggestion-chip" onclick="setPrompt(this)">Portrait of a robot with human eyes</span>
+        <span class="suggestion-chip" onclick="setPrompt(this)">Abstract oil painting, deep ocean</span>
+        <span class="suggestion-chip" onclick="setPrompt(this)">Ancient temple overgrown with jungle</span>
+      </div>
+
+      <div class="input-group">
+        <div class="prompt-wrapper">
+          <textarea
+            id="promptInput"
+            placeholder="Describe the image you want to create..."
+            maxlength="500"
+            rows="3"
+            oninput="updateChar()"
+            onkeydown="handleKey(event)"
+          ></textarea>
+          <span class="char-count" id="charCount">0 / 500</span>
+        </div>
+
+        <div class="actions">
+          <button class="btn-generate" id="generateBtn" onclick="generate()">
+            ✦ Generate
+          </button>
+          <button class="btn-clear" onclick="clearAll()">Clear</button>
+          <span class="hint">⌘ + Enter to generate</span>
+        </div>
+      </div>
+
+      <div class="status-bar" id="statusBar">
+        <div class="status-bar-fill" id="statusFill"></div>
+      </div>
+
+      <div class="status-msg" id="statusMsg"></div>
+
+      <!-- Result -->
+      <div class="result-area" id="resultArea">
+        <div class="result-label">Generated Image</div>
+        <div class="result-frame" id="resultFrame">
+          <!-- image injected here -->
+        </div>
+        <div class="result-actions">
+          <button class="btn-new" onclick="clearAll()">← New Image</button>
+          <a class="btn-download" id="downloadBtn" download="imagin-generated.jpg">
+            ↓ Download
+          </a>
+        </div>
+      </div>
+
+      <!-- History -->
+      <div class="history-section" id="historySection">
+        <div class="history-label">Recent</div>
+        <div class="history-grid" id="historyGrid"></div>
+      </div>
+    </main>
+
+    <footer>
+      <span>IMAGIN · AI Image Generator</span>
+      <span>Powered by GPT-Image API</span>
+    </footer>
+  </div>
+
+  <script>
+    const history = [];
+
+    function updateChar() {
+      const input = document.getElementById('promptInput');
+      document.getElementById('charCount').textContent = `${input.value.length} / 500`;
+    }
+
+    function setPrompt(el) {
+      document.getElementById('promptInput').value = el.textContent.trim();
+      updateChar();
+      document.getElementById('promptInput').focus();
+    }
+
+    function handleKey(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') generate();
+    }
+
+    function setStatus(msg, type = '') {
+      const el = document.getElementById('statusMsg');
+      el.textContent = msg;
+      el.className = 'status-msg ' + type;
+    }
+
+    function setLoading(loading) {
+      const bar = document.getElementById('statusBar');
+      const btn = document.getElementById('generateBtn');
+      if (loading) {
+        bar.classList.add('active', 'loading');
+        btn.disabled = true;
+        btn.textContent = '◌ Generating...';
+      } else {
+        bar.classList.remove('loading');
+        btn.disabled = false;
+        btn.textContent = '✦ Generate';
+      }
+    }
+
+    function clearAll() {
+      document.getElementById('promptInput').value = '';
+      updateChar();
+      document.getElementById('resultArea').classList.remove('visible');
+      document.getElementById('statusBar').classList.remove('active', 'loading');
+      setStatus('');
+    }
+
+    function addToHistory(src) {
+      history.unshift(src);
+      if (history.length > 12) history.pop();
+
+      const grid = document.getElementById('historyGrid');
+      const section = document.getElementById('historySection');
+      grid.innerHTML = '';
+      history.forEach(url => {
+        const img = document.createElement('img');
+        img.src = url;
+        img.className = 'history-thumb';
+        img.title = 'Click to view';
+        img.onclick = () => showResult(url);
+        grid.appendChild(img);
+      });
+      section.classList.add('visible');
+    }
+
+    function showResult(blobUrl) {
+      const frame = document.getElementById('resultFrame');
+      const download = document.getElementById('downloadBtn');
+      frame.innerHTML = '';
+
+      const img = document.createElement('img');
+      img.src = blobUrl;
+      img.alt = 'Generated image';
+      img.onload = () => setStatus('Image generated successfully', 'success');
+      frame.appendChild(img);
+
+      download.href = blobUrl;
+      document.getElementById('resultArea').classList.add('visible');
+    }
+
+    async function generate() {
+      const prompt = document.getElementById('promptInput').value.trim();
+      if (!prompt) {
+        setStatus('Please enter a prompt first.', 'error');
+        document.getElementById('promptInput').focus();
+        return;
+      }
+
+      setLoading(true);
+      setStatus('Preparing your image...');
+      document.getElementById('resultArea').classList.remove('visible');
+
+      // Show skeleton while waiting
+      const frame = document.getElementById('resultFrame');
+      frame.innerHTML = '<div class="skeleton"></div>';
+      document.getElementById('resultArea').classList.add('visible');
+
+      try {
+        setStatus('Sending to AI engine...');
+
+        const formData = new FormData();
+        formData.append('prompt', prompt);
+
+        const response = await fetch('/api/generate', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          let errMsg = 'Generation failed';
+          try {
+            const errData = await response.json();
+            errMsg = errData.error || errMsg;
+          } catch {}
+          throw new Error(errMsg);
+        }
+
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+
+        setLoading(false);
+        showResult(blobUrl);
+        addToHistory(blobUrl);
+
+      } catch (err) {
+        setLoading(false);
+        setStatus('✘ ' + (err.message || 'Something went wrong'), 'error');
+        frame.innerHTML = '';
+        document.getElementById('resultArea').classList.remove('visible');
+        document.getElementById('statusBar').classList.remove('active');
+      }
+    }
+  </script>
+</body>
+</html>
