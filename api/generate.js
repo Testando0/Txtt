@@ -1,127 +1,129 @@
-const axios = require('axios');
+const axios   = require('axios');
 const FormData = require('form-data');
-const sharp = require('sharp');
-const Busboy = require('busboy');
+const sharp    = require('sharp');
+const Busboy   = require('busboy');
 
-// ─── White canvas (Gemini-compatible 1024×1024) ───────────────────────────────
-async function createWhiteImage() {
-  return await sharp({
+// ─────────────────────────────────────────────────────────────────────────────
+// WHITE CANVAS — 1024×1024, pure white, high quality JPEG
+// ─────────────────────────────────────────────────────────────────────────────
+async function whiteCanvas() {
+  return sharp({
     create: { width: 1024, height: 1024, channels: 3, background: { r: 255, g: 255, b: 255 } }
   }).jpeg({ quality: 100 }).toBuffer();
 }
 
-// ─── Prompt Engineering ───────────────────────────────────────────────────────
-// Transforms a simple user prompt into a rich, professional-grade prompt
-// mimicking how DALL-E 3 internally rewrites prompts for quality.
-function enhancePrompt(userPrompt, style, ratio) {
+// ─────────────────────────────────────────────────────────────────────────────
+// MAXIMUM PROMPT ENGINEERING
+// Goal: extract the absolute best output from the model — rewrite the user's
+// simple idea into a dense, hyper-detailed, technically precise prompt that
+// forces the model into professional-grade rendering mode.
+// ─────────────────────────────────────────────────────────────────────────────
+function buildPrompt(raw, style) {
 
-  const stylePresets = {
-    photorealistic: [
-      'ultra-photorealistic',
-      'shot on Sony A7R V',
-      'cinematic 35mm lens',
-      'perfect exposure',
-      'shallow depth of field',
-      'volumetric lighting',
-      'physically based rendering',
-      '8K resolution',
-      'RAW photo quality',
-    ],
-    cinematic: [
-      'cinematic film still',
-      'anamorphic lens flare',
-      'Kodak Vision3 500T film grain',
-      'dramatic chiaroscuro lighting',
-      'widescreen aspect',
-      'directorial composition',
-      'color graded',
-      'IMAX quality',
-    ],
-    digital_art: [
-      'professional digital illustration',
-      'concept art',
-      'ArtStation trending',
-      'rendered in Unreal Engine 5',
-      'global illumination',
-      'subsurface scattering',
-      'ultra-detailed',
-      '4K digital painting',
-    ],
-    oil_painting: [
-      'masterful oil painting',
-      'museum quality',
-      'visible brushstrokes',
-      'oil on linen canvas',
-      'reminiscent of John Singer Sargent',
-      'rich impasto texture',
-      'gallery exhibition piece',
-    ],
-    anime: [
-      'high-quality anime illustration',
-      'studio Ghibli aesthetic',
-      'sharp clean linework',
-      'vibrant cel shading',
-      'detailed anime background',
-      'professional anime key visual',
-    ],
-    watercolor: [
-      'professional watercolor painting',
-      'soft wet-on-wet technique',
-      'luminous washes of color',
-      'fine art paper texture',
-      'delicate ink linework',
-      'award-winning illustration',
-    ],
+  const base = raw.trim();
+
+  // ── Per-style technical injection ────────────────────────────────────────
+  const styles = {
+
+    photo: `
+      Hyperrealistic professional photograph of: ${base}.
+      Shot on Hasselblad H6D-400c medium format camera, 85mm f/1.2 prime lens,
+      ISO 100, perfect exposure, tack-sharp focus on subject, creamy bokeh background.
+      Studio-grade three-point lighting with soft key light, fill light and rim light.
+      Skin tones accurate, textures microscopically sharp — every pore, fiber and surface detail visible.
+      Color graded with LUTs: deep rich shadows, luminous highlights, perfectly balanced midtones.
+      Post-processed in Capture One Pro. Editorial photography quality.
+      RAW sensor capture aesthetic. Published in Vogue, National Geographic, or Architectural Digest.
+    `,
+
+    cinematic: `
+      Cinematic film still of: ${base}.
+      Anamorphic 2.39:1 widescreen. Shot on ARRI Alexa 65 with Zeiss Master Prime lenses.
+      Kodak Vision3 500T film emulation — subtle grain, natural highlight rolloff.
+      Dramatic chiaroscuro lighting: deep inky blacks, glowing practical lights, lens flares.
+      Color grade: teal-orange LUT, crushed blacks, lifted shadows.
+      Depth: extremely shallow focus, bokeh orbs, atmospheric haze.
+      Composition: golden ratio, deliberate negative space, leading lines.
+      Cinematography by Roger Deakins, Emmanuel Lubezki or Hoyte van Hoytema level.
+      IMAX film print quality. Featured in an Oscar-winning feature film.
+    `,
+
+    art: `
+      Breathtaking concept art and digital painting of: ${base}.
+      Created in ZBrush + Photoshop + Octane Render.
+      Painted by a senior artist at ILM, Weta Digital or Pixar.
+      Hyper-detailed: every surface textured, every light source physically accurate.
+      Global illumination, subsurface scattering on organic materials, PBR shading.
+      Cinematic lighting composition. Trending on ArtStation with 100k favorites.
+      Featured in The Art of film, ImagineFX magazine cover.
+      8K resolution painting with museum-level detail.
+    `,
+
+    oil: `
+      Masterful oil painting of: ${base}.
+      Painted in the style of the great masters — brushwork quality of Sargent, Rembrandt or Sorolla.
+      Oil on linen canvas, large format. Visible impasto texture, directional brushstrokes.
+      Luminous glazing technique: translucent color layers building rich depth.
+      Dramatic Rembrandt lighting — single warm key light, deep velvety shadows.
+      Museum-quality exhibition piece. Sold at Christie's auction for millions.
+      Fine art photography of the painting with canvas texture perfectly visible.
+    `,
+
+    anime: `
+      Ultra high quality anime illustration of: ${base}.
+      Production quality: Studio Ghibli, Makoto Shinkai, or ufotable level.
+      Extremely clean sharp linework, professional ink inking.
+      Vibrant color palette, cel shading with painted background.
+      Dynamic lighting: rim light, caustics, detailed reflections.
+      Key visual quality — could be the cover of a Blu-ray release.
+      Detailed background environment, complex layered composition.
+      Character design by top-tier Japanese studio. Pixiv 1 million views.
+    `,
+
+    fantasy: `
+      Epic fantasy digital artwork of: ${base}.
+      Style blending classical oil painting with modern digital techniques.
+      By artists like Greg Rutkowski, Artgerm, or Alphonse Mucha.
+      Cinematic fantasy lighting: magical glows, volumetric god rays, mystical atmosphere.
+      Incredibly detailed environment: every stone, leaf, fabric, and armor piece crafted.
+      Rich color palette: deep purples, golds, crimsons and ethereal blues.
+      World-building level art. Published in a fantasy novel or RPG sourcebook.
+      ArtStation Daily Deviation. Printed as a massive canvas print.
+    `,
   };
 
-  const qualityCore = [
-    'masterpiece',
-    'best quality',
-    'highly detailed',
-    'professional',
-    'award-winning composition',
-    'perfect focus',
-    'intricate details',
-  ];
+  // ── Universal quality suffix — appended to EVERY style ───────────────────
+  const qualitySuffix = `
+    Technical quality requirements:
+    - Resolution: equivalent to 8K (7680×4320) downsampled to 4K for sharpness
+    - Zero compression artifacts, zero noise unless intentional film grain
+    - Perfect anatomical accuracy for any people or creatures
+    - Physically correct lighting and shadows with no inconsistencies
+    - Rich, deep color space: wide gamut, no color banding
+    - Masterful composition: rule of thirds, leading lines, depth layers (foreground, mid, background)
+    - Professional retouching: flawless but not plastic
+    - NOT blurry, NOT pixelated, NOT low quality, NOT washed out, NOT flat lighting
+    - NOT watermarked, NOT signed, NOT with borders or frames
+    - NOT deformed anatomy, NOT extra limbs, NOT wrong proportions
+    Render as if this will be sold as a premium print for $10,000.
+  `;
 
-  const lightingEnhancers = [
-    'dramatic lighting',
-    'rich color palette',
-    'perfect color grading',
-    'high contrast',
-    'vivid colors',
-  ];
+  const chosen = styles[style] || styles.photo;
 
-  const avoidClause =
-    'avoid: blurry, low quality, pixelated, watermark, signature, ugly, deformed, ' +
-    'oversaturated, bad anatomy, duplicate, extra limbs, out of frame, cropped, worst quality, ' +
-    'low resolution, amateur, flat lighting, washed out colors';
-
-  const ratioHint = {
-    '1:1':  'square composition, centered subject',
-    '16:9': 'wide cinematic composition, rule of thirds',
-    '9:16': 'vertical portrait composition, centered subject',
-    '4:3':  'classic photographic composition',
-  }[ratio] || 'well-balanced composition';
-
-  const selectedStyle = stylePresets[style] || stylePresets.photorealistic;
-
-  return [
-    userPrompt.trim(),
-    ...qualityCore,
-    ...selectedStyle,
-    ...lightingEnhancers,
-    ratioHint,
-    avoidClause,
-  ].join(', ');
+  // Collapse extra whitespace and build final prompt
+  return (chosen + qualitySuffix)
+    .replace(/\n/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
-// ─── Multipart parser ─────────────────────────────────────────────────────────
-function parseMultipart(req) {
+// ─────────────────────────────────────────────────────────────────────────────
+// MULTIPART PARSER (Vercel-native, no multer)
+// ─────────────────────────────────────────────────────────────────────────────
+function parseForm(req) {
   return new Promise((resolve, reject) => {
-    const bb = Busboy({ headers: req.headers, limits: { fileSize: 50 * 1024 * 1024 } });
-    const fields = {};
-    const files = {};
+    const bb = Busboy({ headers: req.headers, limits: { fileSize: 20 * 1024 * 1024 } });
+    const fields = {}, files = {};
     bb.on('file', (name, stream, info) => {
       const chunks = [];
       stream.on('data', c => chunks.push(c));
@@ -134,7 +136,9 @@ function parseMultipart(req) {
   });
 }
 
-// ─── Handler ──────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// HANDLER
+// ─────────────────────────────────────────────────────────────────────────────
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -144,70 +148,82 @@ module.exports = async (req, res) => {
   if (req.method !== 'POST')   return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { fields } = await parseMultipart(req);
+    const { fields } = await parseForm(req);
     const userPrompt = (fields.prompt || '').trim();
-    const style      = fields.style  || 'photorealistic';
-    const ratio      = fields.ratio  || '1:1';
+    const style      = (fields.style  || 'photo').trim();
 
-    if (!userPrompt) {
-      return res.status(400).json({ error: 'Prompt is required' });
-    }
+    if (!userPrompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    const finalPrompt = enhancePrompt(userPrompt, style, ratio);
-    console.log('[PROMPT]', finalPrompt);
+    // Build maximum-quality prompt
+    const finalPrompt = buildPrompt(userPrompt, style);
+    console.log('[BUNIX PROMPT LEN]', finalPrompt.length);
 
-    // White 1024×1024 canvas (Gemini-compatible blank)
-    const whiteImage = await createWhiteImage();
+    // White canvas
+    const canvas = await whiteCanvas();
 
+    // Call API
     const form = new FormData();
-    form.append('image', whiteImage, { filename: 'canvas.jpg', contentType: 'image/jpeg' });
+    form.append('image', canvas, { filename: 'canvas.jpg', contentType: 'image/jpeg' });
     form.append('param', finalPrompt);
 
-    const response = await axios.post(
+    const apiRes = await axios.post(
       'https://api.nexray.web.id/ai/gptimage',
       form,
       {
         headers: form.getHeaders(),
         responseType: 'arraybuffer',
-        timeout: 180000,
+        timeout: 200000,
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
       }
     );
 
-    if (!response?.data) return res.status(500).json({ error: 'Generation failed — no data' });
+    if (!apiRes?.data) return res.status(500).json({ error: 'No data from API' });
 
-    const result = Buffer.from(response.data);
-    if (!result.length) return res.status(500).json({ error: 'Generation failed — empty result' });
+    const raw = Buffer.from(apiRes.data);
+    if (!raw.length) return res.status(500).json({ error: 'Empty result from API' });
 
-    // Post-process: upscale + sharpen for DALL-E 3 level crispness
-    let finalImage = result;
+    // ── Post-process: maximize output quality ─────────────────────────────
+    let final = raw;
     try {
-      finalImage = await sharp(result)
-        .resize(1792, 1792, {
-          fit: 'inside',
-          withoutEnlargement: false,
-          kernel: sharp.kernel.lanczos3
+      // Get image metadata to preserve aspect ratio
+      const meta = await sharp(raw).metadata();
+      const w = meta.width  || 1024;
+      const h = meta.height || 1024;
+
+      // Scale up 2× with Lanczos3 (best quality resampling)
+      const targetW = Math.min(w * 2, 2048);
+      const targetH = Math.min(h * 2, 2048);
+
+      final = await sharp(raw)
+        .resize(targetW, targetH, {
+          kernel: sharp.kernel.lanczos3,
+          fit: 'fill',
         })
-        .sharpen({ sigma: 0.8, m1: 0.5, m2: 0.5 })
-        .jpeg({ quality: 97, chromaSubsampling: '4:4:4' })
+        // Unsharp mask — recovers fine detail lost in generation
+        .sharpen({ sigma: 1.2, m1: 1.5, m2: 0.7, x1: 2, y2: 10, y3: 20 })
+        // Slight contrast/vibrance boost to pop
+        .modulate({ brightness: 1.02, saturation: 1.12 })
+        // Output as maximum quality JPEG (no chroma subsampling = sharper color edges)
+        .jpeg({ quality: 98, chromaSubsampling: '4:4:4', mozjpeg: true })
         .toBuffer();
     } catch (e) {
       console.warn('[POST-PROCESS WARN]', e.message);
+      // fallback — send raw
     }
 
     res.setHeader('Content-Type', 'image/jpeg');
-    res.setHeader('Content-Length', finalImage.length);
+    res.setHeader('Content-Length', final.length);
     res.setHeader('Cache-Control', 'no-cache');
-    return res.status(200).send(finalImage);
+    return res.status(200).send(final);
 
   } catch (err) {
-    console.error('[GENERATE ERROR]', err.message);
+    console.error('[BUNIX ERROR]', err.message);
     if (err.code === 'ECONNABORTED' || err.message?.includes('timeout'))
-      return res.status(504).json({ error: 'Generation timed out — try again' });
+      return res.status(504).json({ error: 'Timeout — try again' });
     if (err.response?.status)
-      return res.status(err.response.status).json({ error: `API error: ${err.response.status}` });
-    return res.status(500).json({ error: 'Internal server error' });
+      return res.status(err.response.status).json({ error: `API error ${err.response.status}` });
+    return res.status(500).json({ error: 'Internal error' });
   }
 };
 
